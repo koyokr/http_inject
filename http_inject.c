@@ -3,6 +3,7 @@
 #include "pcap.h"
 #include "win32/libnet.h"
 #else
+#include <pcap.h>
 #include <libnet.h>
 #endif
 
@@ -21,6 +22,8 @@ inline void swap32(uint32_t *a, uint32_t *b);
 inline void swap48(void *a, void *b);
 #ifdef WIN32
 inline void swap32l(ULONG *a, ULONG *b);
+#else
+#define swap32l(a, b) swap32(a, b)
 #endif
 
 void checksum_ip(struct libnet_ipv4_hdr *ip) {
@@ -123,11 +126,7 @@ void pcap_sendpacket_backward(pcap_t *pd, u_char *pkt, const u_char *pkt_r, cons
 
 	/* set */
 	swap48(eth->ether_dhost, eth->ether_shost);
-#ifdef WIN32
 	swap32l(&ip->ip_src.s_addr, &ip->ip_dst.s_addr);
-#else
-	swap32(&ip->ip_src.s_addr, &ip->ip_dst.s_addr);
-#endif
 	swap16(&tcp->th_sport, &tcp->th_dport);
 	swap32(&tcp->th_seq, &tcp->th_ack);
 
