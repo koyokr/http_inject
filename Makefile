@@ -1,9 +1,13 @@
-RESULT  = http_inject
+TARGET  = http_inject
 SOURCES = http_inject.c
 HEADERS = http_inject.h
 
-$(RESULT): $(SOURCES) $(HEADERS)
-	gcc -O2 -o $(RESULT) $(SOURCES) -lpcap
+LIBS = -lpcap
+
+all: $(TARGET)
+
+$(TARGET): $(SOURCES) $(HEADERS)
+	gcc -O2 -o $(TARGET) $(SOURCES) $(LIBS)
 
 clean:
-	rm -f $(RESULT) *.o *.gch
+	rm -f $(TARGET) *.o *.gch
