@@ -14,7 +14,15 @@
 
 #define IPPRO_TCP 6
 
-#define MSG_LEN 7
+#define LINK_REDIRECT "koyo.kr"    /* REDIRECT */
+#define LINK_BLOCK    "gilgil.net" /* BLOCK */
+#define MSG_FORWARD   "blocked"
+#define MSG_BACKWARD  "HTTP/1.1 302 Found\r\n" \
+                      "Location: http://"LINK_REDIRECT"/\r\n"
+
+#define LINK_BLOCK_LEN   10
+#define MSG_FORWARD_LEN  7
+#define MSG_BACKWARD_LEN 47
 
 inline void swap8(uint8_t *a, uint8_t *b);
 inline void swap16(uint16_t *a, uint16_t *b);
@@ -32,7 +40,7 @@ void checksum_ip(struct libnet_ipv4_hdr *ip) {
 
 	ip->ip_sum = 0;
 
-	/* ip: 10 */
+	/* add ip data */
 	sum += *p++;
 	sum += *p++;
 	sum += *p++;
@@ -50,7 +58,7 @@ void checksum_ip(struct libnet_ipv4_hdr *ip) {
 	ip->ip_sum = ~sum & 0xffff;
 }
 
-void checksum_tcp(struct libnet_ipv4_hdr* ip, struct libnet_tcp_hdr * tcp, u_int len){
+void checksum_tcp(const struct libnet_ipv4_hdr* ip, struct libnet_tcp_hdr * tcp, const u_int len){
 	struct pseudo_h ph;
 	u_short *p;
 	u_int count;
@@ -64,7 +72,7 @@ void checksum_tcp(struct libnet_ipv4_hdr* ip, struct libnet_tcp_hdr * tcp, u_int
 	ph.ip_p   = IPPRO_TCP;
 	ph.ip_len = htons(ntohs(ip->ip_len) - LIBNET_IPV4_H);
 
-	/* tcp: 10+a */
+	/* add tcp data */
 	count = len >> 1;
 	p = (u_short *)tcp;
 	while (count--)
@@ -72,7 +80,7 @@ void checksum_tcp(struct libnet_ipv4_hdr* ip, struct libnet_tcp_hdr * tcp, u_int
 	if (len % 2)
 		sum += *p;
 
-	/* pseudo: 6 */
+	/* add pseudo data */
 	p = (u_short *)&ph;
 	sum += *p++;
 	sum += *p++;
@@ -87,7 +95,7 @@ void checksum_tcp(struct libnet_ipv4_hdr* ip, struct libnet_tcp_hdr * tcp, u_int
 	tcp->th_sum = ~sum & 0xffff;
 }
 
-void pcap_sendpacket_forward(pcap_t *pd, u_char *pkt, const u_char *pkt_r, const u_char *msg) {
+void pcap_sendpacket_forward(u_char *pkt, const u_char *pkt_r, const u_char *msg, const u_short msg_len) {
 	struct libnet_ipv4_hdr *ip;
 	struct libnet_tcp_hdr  *tcp;
 
@@ -95,24 +103,21 @@ void pcap_sendpacket_forward(pcap_t *pd, u_char *pkt, const u_char *pkt_r, const
 	memcpy(pkt, pkt_r, LIBNET_ETH_H + LIBNET_IPV4_H + LIBNET_TCP_H);
 	ip = (struct libnet_ipv4_hdr *)(pkt + LIBNET_ETH_H);
 	tcp = (struct libnet_tcp_hdr *)((char *)ip + LIBNET_IPV4_H);
-	memcpy((char *)tcp + LIBNET_TCP_H, msg, MSG_LEN);
+	memcpy((char *)tcp + LIBNET_TCP_H, msg, msg_len);
 
 	/* set */
 	ip->ip_id    += 1;
-	tcp->th_seq   = htonl(ntohl(tcp->th_seq) + ntohs(ip->ip_len) - LIBNET_IPV4_H - LIBNET_TCP_H);
-	ip->ip_len    = htons(LIBNET_IPV4_H + LIBNET_TCP_H + MSG_LEN);
+	tcp->th_seq   = htonl(ntohl(tcp->th_seq) + ntohs(ip->ip_len) - LIBNET_IPV4_H - LIBNET_TCP_H); /* sequence number */
+	ip->ip_len    = htons(LIBNET_IPV4_H + LIBNET_TCP_H + msg_len);
 	tcp->th_flags = TH_FIN | TH_ACK;
 	tcp->th_win   = 0;
 
 	/* checksum */
 	checksum_ip(ip);
-	checksum_tcp(ip, tcp, LIBNET_TCP_H + MSG_LEN);
-
-	/* send */
-	pcap_sendpacket(pd, pkt, LIBNET_ETH_H + LIBNET_IPV4_H + LIBNET_TCP_H + MSG_LEN);
+	checksum_tcp(ip, tcp, LIBNET_TCP_H + msg_len);
 }
 
-void pcap_sendpacket_backward(pcap_t *pd, u_char *pkt, const u_char *pkt_r, const u_char *msg) {
+void pcap_sendpacket_backward(u_char *pkt, const u_char *pkt_r, const u_char *msg, const u_short msg_len) {
 	struct libnet_ethernet_hdr *eth;
 	struct libnet_ipv4_hdr     *ip;
 	struct libnet_tcp_hdr      *tcp;
@@ -122,26 +127,24 @@ void pcap_sendpacket_backward(pcap_t *pd, u_char *pkt, const u_char *pkt_r, cons
 	eth = (struct libnet_ethernet_hdr *)pkt;
 	ip = (struct libnet_ipv4_hdr *)(pkt + LIBNET_ETH_H);
 	tcp = (struct libnet_tcp_hdr *)((char *)ip + LIBNET_IPV4_H);
-	memcpy((char *)tcp + LIBNET_TCP_H, msg, MSG_LEN);
+	memcpy((char *)tcp + LIBNET_TCP_H, msg, msg_len);
 
-	/* set */
+	/* swap */
 	swap48(eth->ether_dhost, eth->ether_shost);
 	swap32l(&ip->ip_src.s_addr, &ip->ip_dst.s_addr);
 	swap16(&tcp->th_sport, &tcp->th_dport);
 	swap32(&tcp->th_seq, &tcp->th_ack);
 
-	ip->ip_ttl    = 128;
-	tcp->th_ack   = htonl(ntohl(tcp->th_ack) + ntohs(ip->ip_len) - LIBNET_IPV4_H - LIBNET_TCP_H);
-	ip->ip_len    = htons(LIBNET_IPV4_H + LIBNET_TCP_H + MSG_LEN);
+	/* set */
+	ip->ip_ttl    = 128; /* time to live */
+	tcp->th_ack   = htonl(ntohl(tcp->th_ack) + ntohs(ip->ip_len) - LIBNET_IPV4_H - LIBNET_TCP_H); /* acknowlegment number */
+	ip->ip_len    = htons(LIBNET_IPV4_H + LIBNET_TCP_H + msg_len);
 	tcp->th_flags = TH_FIN | TH_ACK;
-	tcp->th_win   = htons(64240);
+	tcp->th_win   = 0;
 
 	/* checksum */
 	checksum_ip(ip);
-	checksum_tcp(ip, tcp, LIBNET_TCP_H + MSG_LEN);
-
-	/* send */
-	pcap_sendpacket(pd, pkt, LIBNET_ETH_H + LIBNET_IPV4_H + LIBNET_TCP_H + MSG_LEN);
+	checksum_tcp(ip, tcp, LIBNET_TCP_H + msg_len);
 }
 
 int http_capture(const u_char *pkt_r) {
@@ -149,16 +152,25 @@ int http_capture(const u_char *pkt_r) {
 	struct libnet_ipv4_hdr     *ip;
 	struct libnet_tcp_hdr      *tcp;
 
+	/* ethernet header */
 	eth = (struct libnet_ethernet_hdr *)pkt_r;
 
+	/* ip header */
 	if (ntohs(eth->ether_type) != ETHERTYPE_IP) return 0;
 	ip = (struct libnet_ipv4_hdr *)((char *)eth + LIBNET_ETH_H);
 
+	/* tcp header */
 	if (ntohs(ip->ip_len) <= 40 || ip->ip_p != IPPRO_TCP) return 0;
 	tcp = (struct libnet_tcp_hdr *)((char *)ip + ip->ip_hl * 4);
 
+	/* tcp data */
 	const char *cp = (char *)tcp + tcp->th_off * 4;
 	if (memcmp(cp, "GET", 3)) return 0;
+
+	while (*cp++ != '\r');
+	while (*cp++ != ':');
+	cp++;
+	if (memcmp(cp, LINK_BLOCK, LINK_BLOCK_LEN)) return 0;
 
 	return 1;
 }
@@ -173,7 +185,6 @@ int main() {
 		fprintf(stderr, "%s\n", errbuf);
 		return EXIT_FAILURE;
 	}
-
 	pd = pcap_open_live(iface, 65536, NONPROMISCUOUS, 0, errbuf);
 	if (pd == NULL) {
 		fprintf(stderr, "%s\n", errbuf);
@@ -181,15 +192,24 @@ int main() {
 	}
 
 	struct pcap_pkthdr *hdr;
-	const u_char *pkt_r;       /* receive packet */
+	const u_char *pkt_r;      /* receive packet */
 	u_char pkt[1024] = { 0 }; /* send pakcet */
-	u_char msg[MSG_LEN+1] = "blocked";
+	u_char msg_forward[MSG_FORWARD_LEN+1] = MSG_FORWARD;          /* blocked message */
+	u_char msg_backward[MSG_BACKWARD_LEN+1] = MSG_BACKWARD; /*  */
 
 	for (;;)
 		if (pcap_next_ex(pd, &hdr, &pkt_r) == 1)
 			if (http_capture(pkt_r)) {
-				pcap_sendpacket_backward(pd, pkt, pkt_r, msg);
-				pcap_sendpacket_forward(pd, pkt, pkt_r, msg);
+				/* backword fin */
+				pcap_sendpacket_backward(pkt, pkt_r, msg_backward, MSG_BACKWARD_LEN);
+				pcap_sendpacket(pd, pkt, LIBNET_ETH_H + LIBNET_IPV4_H + LIBNET_TCP_H + MSG_BACKWARD_LEN);
+
+				/* forward fin */
+				pcap_sendpacket_forward(pkt, pkt_r, msg_forward, MSG_FORWARD_LEN);
+				pcap_sendpacket(pd, pkt, LIBNET_ETH_H + LIBNET_IPV4_H + LIBNET_TCP_H + MSG_FORWARD_LEN);
+
+				printf("[*] Block \""LINK_BLOCK"\"\n"
+				       "[*] Redirect \""LINK_REDIRECT"\"\n");
 			}
 
 	//pcap_close(pd);
