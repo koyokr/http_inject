@@ -14,15 +14,16 @@
 
 #define IPPRO_TCP 6
 
-#define LINK_REDIRECT "koyo.kr"    /* REDIRECT */
-#define LINK_BLOCK    "gilgil.net" /* BLOCK */
+#define LINK_REDIRECT "https://en.wikipedia.org/wiki/HTTP_302" /* REDIRECT LINK */
+#define LINK_BLOCK    "gilgil.net"                             /* BLOCK LINK */
 #define MSG_FORWARD   "blocked"
 #define MSG_BACKWARD  "HTTP/1.1 302 Found\r\n" \
-                      "Location: http://"LINK_REDIRECT"/\r\n"
+                      "Location: "LINK_REDIRECT"\r\n"
 
-#define LINK_BLOCK_LEN   10
-#define MSG_FORWARD_LEN  7
-#define MSG_BACKWARD_LEN 47
+#define LINK_REDIRECT_LEN sizeof(LINK_REDIRECT) - 1
+#define LINK_BLOCK_LEN    sizeof(LINK_BLOCK)    - 1
+#define MSG_FORWARD_LEN   sizeof(MSG_FORWARD)   - 1
+#define MSG_BACKWARD_LEN  sizeof(MSG_BACKWARD)  - 1
 
 inline void swap8(uint8_t *a, uint8_t *b);
 inline void swap16(uint16_t *a, uint16_t *b);
@@ -166,11 +167,13 @@ int http_capture(const u_char *pkt_r) {
 	/* tcp data */
 	const char *cp = (char *)tcp + tcp->th_off * 4;
 	if (memcmp(cp, "GET", 3)) return 0;
-
+	
+	/* link filter
 	while (*cp++ != '\r');
 	while (*cp++ != ':');
 	cp++;
 	if (memcmp(cp, LINK_BLOCK, LINK_BLOCK_LEN)) return 0;
+	*/
 
 	return 1;
 }
@@ -208,8 +211,8 @@ int main() {
 				pcap_sendpacket_forward(pkt, pkt_r, msg_forward, MSG_FORWARD_LEN);
 				pcap_sendpacket(pd, pkt, LIBNET_ETH_H + LIBNET_IPV4_H + LIBNET_TCP_H + MSG_FORWARD_LEN);
 
-				printf("[*] Block \""LINK_BLOCK"\"\n"
-				       "[*] Redirect \""LINK_REDIRECT"\"\n");
+				/* printf("[*] Block \""LINK_BLOCK"\"\n"); */
+				printf("[*] Redirect \""LINK_REDIRECT"\"\n");
 			}
 
 	//pcap_close(pd);
