@@ -167,7 +167,7 @@ int http_capture(const u_char *pkt_r) {
 	/* tcp data */
 	const char *cp = (char *)tcp + tcp->th_off * 4;
 	if (memcmp(cp, "GET", 3)) return 0;
-	
+
 	/* link filter
 	while (*cp++ != '\r');
 	while (*cp++ != ':');
