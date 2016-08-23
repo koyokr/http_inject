@@ -1,4 +1,4 @@
-#ifdef _WIN32
+#ifdef WIN32
 #define HAVE_REMOTE
 #include "pcap.h"
 #include "win32/libnet.h"
@@ -29,7 +29,7 @@ inline void swap8(uint8_t *a, uint8_t *b);
 inline void swap16(uint16_t *a, uint16_t *b);
 inline void swap32(uint32_t *a, uint32_t *b);
 inline void swap48(void *a, void *b);
-#ifdef _WIN32
+#ifdef WIN32
 inline void swap32l(ULONG *a, ULONG *b);
 #else
 #define swap32l(a, b) swap32(a, b)
@@ -244,7 +244,7 @@ inline void swap48(void *a, void *b) {
 	memcpy(b, tmp, 6);
 }
 
-#ifdef _WIN32
+#ifdef WIN32
 inline void swap32l(ULONG *a, ULONG *b) {
 	ULONG tmp = *a;
 	*a = *b;
